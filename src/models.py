@@ -77,10 +77,31 @@ class SQLOperation:
     update_values: Optional[Dict[str, Any]] = None
     affected_rows: Optional[int] = None
 
+    def _process_append_value(self, column: str, value: str) -> str:
+        """处理追加值的特殊语法"""
+        if not isinstance(value, str) or not value.startswith("+"):
+            return value
+
+        append_text = value[1:]  # 移除 '+' 前缀
+        if not append_text:  # 如果只有 '+'，忽略这个更新
+            return None
+
+        # 使用 CONCAT 函数（Oracle 使用 ||）
+        return f"{column} || '{append_text}'"
+
     def _format_value(self, column: str, value: Any) -> str:
         """格式化值，处理特殊类型"""
         if value is None:
             return "NULL"
+
+        # 处理追加文本的情况
+        if isinstance(value, str) and value.startswith("+"):
+            processed_value = self._process_append_value(column, value)
+            if processed_value is None:
+                return column  # 返回原列名，相当于不更新
+            return processed_value
+
+        # 处理其他类型
         elif column in self.table_config.number_columns:
             return str(value)
         elif column in self.table_config.date_columns:
@@ -118,7 +139,11 @@ class SQLOperation:
             updates = []
             for column, value in self.update_values.items():
                 formatted_value = self._format_value(column, value)
-                updates.append(f"{column} = {formatted_value}")
+                if formatted_value != column:  # 只有当值不等于列名时才添加更新
+                    updates.append(f"{column} = {formatted_value}")
+
+            if not updates:  # 如果没有有效的更新，抛出异常
+                raise ValueError("No valid update values provided")
 
             return f"UPDATE {self.table_name} SET {', '.join(updates)} WHERE {self.get_where_clause()}"
 

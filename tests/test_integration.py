@@ -386,6 +386,60 @@ class TestIntegration(unittest.TestCase):
         self.assertFalse(backup_data.empty)
         self.assertEqual(backup_data.iloc[0]["salary"], original_data.iloc[0]["salary"])
 
+    def test_append_text(self):
+        """测试文本追加功能"""
+        # 准备测试数据
+        test_data = pd.DataFrame(
+            [
+                {
+                    "table": "employees",
+                    "employee_id": 1001,
+                    "command": "update",
+                    "new_emp_name": "+_INACTIVE",
+                    "new_status": "+*",
+                },
+                {
+                    "table": "departments",
+                    "id": "D001",
+                    "command": "update",
+                    "new_dept_name": "+_ARCHIVED",
+                },
+            ]
+        )
+        test_csv = "tests/data/test_append.csv"
+        test_data.to_csv(test_csv, index=False)
+
+        # 获取原始数据
+        emp_before = self.db_manager.fetch_data(
+            "SELECT emp_name, status FROM employees WHERE emp_id = 1001"
+        )
+        dept_before = self.db_manager.fetch_data(
+            "SELECT dept_name FROM departments WHERE dept_id = 'D001'"
+        )
+
+        # 执行更新
+        self.processor.process_file(test_csv)
+
+        # 验证结果
+        emp_after = self.db_manager.fetch_data(
+            "SELECT emp_name, status FROM employees WHERE emp_id = 1001"
+        )
+        dept_after = self.db_manager.fetch_data(
+            "SELECT dept_name FROM departments WHERE dept_id = 'D001'"
+        )
+
+        # 验证文本追加
+        self.assertEqual(
+            emp_after.iloc[0]["emp_name"], emp_before.iloc[0]["emp_name"] + "_INACTIVE"
+        )
+        self.assertEqual(
+            emp_after.iloc[0]["status"], emp_before.iloc[0]["status"] + "*"
+        )
+        self.assertEqual(
+            dept_after.iloc[0]["dept_name"],
+            dept_before.iloc[0]["dept_name"] + "_ARCHIVED",
+        )
+
     @classmethod
     def tearDownClass(cls):
         """测试类清理"""

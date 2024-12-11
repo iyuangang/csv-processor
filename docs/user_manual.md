@@ -180,8 +180,40 @@ CSV 文件必须包含以下列：
 ### 如何调试程序？
 
 - 使用 `--debug` 参数查看详细日志
-- 检查数据库日志
+- 检查数��库日志
 - 使用测试用例验证功能
+
+## 特殊更新语法
+
+### 文本追加功能
+
+在更新操作中，可以使用特殊的语法来追加文本到现有值：
+
+1. **追加固定文本**
+   - 语法：`+TEXT`
+   - 示例：`new_name: +_DELETED` 会在原name值后追加 "_DELETED"
+
+2. **追加特殊字符**
+   - 语法：`+字符`
+   - 示例：`new_status: +*` 会在原status值后追加 "*"
+
+### 示例
+
+```csv
+table,id,command,new_name,new_status
+employees,1001,update,+_INACTIVE,+*
+departments,D001,update,+_OLD,+_ARCHIVED
+```
+
+这将产生以下效果：
+- 员工1001的name会变成 "原名_INACTIVE"，status会变成 "原状态*"
+- 部门D001的name会变成 "原名_OLD"，status会变成 "原状态_ARCHIVED"
+
+### 注意事项
+
+1. 追加功能只适用于文本类型的列
+2. 如果只写 "+" 而没有后续文本，该字段将保持不变
+3. 数字和日期类型的列不支持追加功能
 
 ## 联系我们
 
