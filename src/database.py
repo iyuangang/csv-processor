@@ -7,6 +7,7 @@ from .models import DatabaseConfig, SQLOperation
 
 console = Console()
 
+
 class DatabaseManager:
     """数据库管理类"""
 
@@ -21,12 +22,10 @@ class DatabaseManager:
             dsn = cx_Oracle.makedsn(
                 self.config.host,
                 self.config.port,
-                service_name=self.config.service_name
+                service_name=self.config.service_name,
             )
             self.connection = cx_Oracle.connect(
-                self.config.username,
-                self.config.password,
-                dsn
+                self.config.username, self.config.password, dsn
             )
             self.connection.autocommit = False
         except cx_Oracle.Error as e:
@@ -41,21 +40,21 @@ class DatabaseManager:
         except Exception:
             self.connection.rollback()
             raise
-    
-    def backup_data(self, cursor: cx_Oracle.Cursor, conditions: str) -> None:
+
+    def backup_data(self, operation: SQLOperation) -> None:
         """备份数据"""
         try:
-            # 修改备份 SQL，添加 backup_time
+            # 构建备份SQL
             backup_sql = f"""
-                INSERT INTO test_table_bak 
-                (id, name, status, department, salary, join_date, backup_time)
-                SELECT 
-                    id, name, status, department, salary, join_date, 
-                    SYSTIMESTAMP
-                FROM test_table 
-                WHERE {conditions}
+                INSERT INTO {operation.table_name}_bak 
+                SELECT t.*, SYSTIMESTAMP as backup_time 
+                FROM {operation.table_name} t 
+                WHERE {operation.get_where_clause()}
             """
-            cursor.execute(backup_sql)
+
+            with self.connection.cursor() as cursor:
+                cursor.execute(backup_sql)
+
         except cx_Oracle.Error as e:
             raise RuntimeError(f"Failed to backup data: {e}")
 
@@ -64,19 +63,23 @@ class DatabaseManager:
         try:
             with self.connection.cursor() as cursor:
                 cursor.execute(sql)
-                columns = [desc[0] for desc in cursor.description]
+                columns = [desc[0].lower() for desc in cursor.description]
                 data = cursor.fetchall()
                 return pd.DataFrame(data, columns=columns)
-        except (cx_Oracle.Error, pd.io.sql.DatabaseError) as e:
+        except cx_Oracle.Error as e:
             raise RuntimeError(f"Failed to fetch data: {e}")
 
     def execute_operation(self, operation: SQLOperation) -> int:
         """执行SQL操作"""
         with self.connection.cursor() as cursor:
             try:
-                self.backup_data(cursor, operation.conditions)
-                cursor.execute(operation.sql)
+                # 如果启用了备份，先备份数据
+                self.backup_data(operation)
+
+                # 执行操作
+                cursor.execute(operation.get_sql())
                 return cursor.rowcount
+
             except cx_Oracle.Error as e:
                 raise RuntimeError(f"Failed to execute SQL: {e}")
 
@@ -86,4 +89,6 @@ class DatabaseManager:
             try:
                 self.connection.close()
             except cx_Oracle.Error as e:
-                console.print(f"[yellow]Warning: Error closing database connection: {e}[/yellow]")
+                console.print(
+                    f"[yellow]Warning: Error closing database connection: {e}[/yellow]"
+                )
