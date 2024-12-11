@@ -1,7 +1,0 @@
-id,name,status,department,salary,join_date,command,new_salary,new_status,new_join_date
-1.0,,,,,,delete,,,
-,,inactive,IT,,,delete,,,
-,,,HR,,,delete,,,
-5.0,,,,,,update,8000.0,,
-,,active,Sales,,,update,7000.0,inactive,
-10.0,,,,,,update,,,2023-01-01

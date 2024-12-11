@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Set, Any, Dict, Optional, List
 from enum import Enum
 
@@ -42,22 +42,48 @@ class DatabaseConfig:
 
 
 @dataclass
+class TableConfig:
+    """表配置模型"""
+
+    primary_key: str
+    date_columns: List[str]
+    number_columns: List[str]
+    backup_enabled: bool = True
+    columns_mapping: Dict[str, str] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, config: Dict[str, Any]) -> "TableConfig":
+        return cls(
+            primary_key=config["primary_key"],
+            date_columns=config.get("date_columns", []),
+            number_columns=config.get("number_columns", []),
+            backup_enabled=config.get("backup_enabled", True),
+            columns_mapping=config.get("columns_mapping", {}),
+        )
+
+    def map_column(self, csv_column: str) -> str:
+        """将CSV列名映射到实际表列名"""
+        return self.columns_mapping.get(csv_column, csv_column)
+
+
+@dataclass
 class SQLOperation:
     """SQL操作模型"""
 
     command_type: CommandType
     table_name: str
-    conditions: Dict[str, Any]  # 条件字段和值的映射
-    update_values: Optional[Dict[str, Any]] = None  # 更新字段和值的映射
+    conditions: Dict[str, Any]
+    table_config: TableConfig
+    update_values: Optional[Dict[str, Any]] = None
     affected_rows: Optional[int] = None
 
     def _format_value(self, column: str, value: Any) -> str:
         """格式化值，处理特殊类型"""
         if value is None:
             return "NULL"
-        elif isinstance(value, (int, float)):
+        elif column in self.table_config.number_columns:
             return str(value)
-        elif "date" in column.lower():  # 处理日期类型
+        elif column in self.table_config.date_columns:
             return f"TO_DATE('{value}', 'YYYY-MM-DD')"
         else:
             return f"'{str(value)}'"

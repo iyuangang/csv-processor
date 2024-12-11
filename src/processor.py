@@ -3,7 +3,7 @@ import pandas as pd
 from rich.console import Console
 from rich.panel import Panel
 import click
-from .models import UnmatchedData, SQLOperation, CommandType
+from .models import UnmatchedData, SQLOperation, CommandType, TableConfig
 from .database import DatabaseManager
 
 console = Console()
@@ -12,82 +12,68 @@ console = Console()
 class DataProcessor:
     """数据处理类"""
 
-    def __init__(self, db_manager: DatabaseManager, config: Dict[str, Any] = None):
+    def __init__(self, db_manager: DatabaseManager, config: Dict[str, Any]):
         self.db_manager = db_manager
-        self.config = config or {}
-        self.table_name = self.config.get("table_name", "test_table")
-        self.batch_size = self.config.get("batch_size", 1000)
-        self.backup_enabled = self.config.get("backup_enabled", True)
-        self.preview_enabled = self.config.get("preview_enabled", True)
-        self.require_confirmation = self.config.get("require_confirmation", True)
-
-        # 确保备份表存在
-        if self.backup_enabled:
-            self._ensure_backup_table_exists()
-
-    def _ensure_backup_table_exists(self) -> None:
-        """确保备份表存在"""
-        try:
-            # 检查备份表是否存在
-            check_sql = f"""
-                SELECT COUNT(*) 
-                FROM user_tables 
-                WHERE table_name = '{self.table_name.upper()}_BAK'
-            """
-            result = self.db_manager.fetch_data(check_sql)
-
-            if result.iloc[0, 0] == 0:
-                # 如果备份表不存在，创建它
-                create_sql = f"""
-                    CREATE TABLE {self.table_name}_bak AS 
-                    SELECT t.*, SYSTIMESTAMP as backup_time 
-                    FROM {self.table_name} t 
-                    WHERE 1=0
-                """
-                with self.db_manager.connection.cursor() as cursor:
-                    cursor.execute(create_sql)
-                console.print(
-                    f"[green]Created backup table: {self.table_name}_bak[/green]"
-                )
-
-        except Exception as e:
-            console.print(
-                f"[yellow]Warning: Failed to ensure backup table exists: {str(e)}[/yellow]"
-            )
-            self.backup_enabled = False
+        self.config = config
+        self.tables_config = {
+            name: TableConfig.from_dict(cfg)
+            for name, cfg in config.get("tables", {}).items()
+        }
+        self.batch_size = config.get("processor", {}).get("batch_size", 1000)
+        self.preview_enabled = config.get("processor", {}).get("preview_enabled", True)
+        self.require_confirmation = config.get("processor", {}).get(
+            "require_confirmation", True
+        )
 
     def _prepare_operation(self, row: pd.Series) -> SQLOperation:
         """准备SQL操作"""
+        table_name = row["table"]
+        table_config = self.tables_config.get(table_name)
+        if not table_config:
+            raise ValueError(f"Unknown table: {table_name}")
+
         command = CommandType(row["command"].lower())
 
-        # 获取条件列（command列之前的所有列）
-        command_idx = list(row.index).index("command")
-        condition_cols = [col for col in row.index[:command_idx] if pd.notna(row[col])]
+        # 获取条件列（排除table、command和new_开头的列）
+        condition_cols = [
+            col
+            for col in row.index
+            if col not in ["table", "command"]
+            and not col.startswith("new_")
+            and pd.notna(row[col])
+        ]
 
-        # 构建条件字典
-        conditions = {col: row[col] for col in condition_cols}
+        # 映射列名并构建条件字典
+        conditions = {table_config.map_column(col): row[col] for col in condition_cols}
 
         if command == CommandType.DELETE:
             return SQLOperation(
-                command_type=command, table_name=self.table_name, conditions=conditions
+                command_type=command,
+                table_name=table_name,
+                conditions=conditions,
+                table_config=table_config,
             )
 
         elif command == CommandType.UPDATE:
-            # 获取更新列（command列之后的所有new_开头的列）
+            # 获取更新列
             update_cols = [
                 col
-                for col in row.index[command_idx:]
+                for col in row.index
                 if col.startswith("new_") and pd.notna(row[col])
             ]
 
-            # 构建更新值字典
-            update_values = {col.replace("new_", ""): row[col] for col in update_cols}
+            # 映射列名并构建更新值字典
+            update_values = {
+                table_config.map_column(col.replace("new_", "")): row[col]
+                for col in update_cols
+            }
 
             return SQLOperation(
                 command_type=command,
-                table_name=self.table_name,
+                table_name=table_name,
                 conditions=conditions,
                 update_values=update_values,
+                table_config=table_config,
             )
 
     def process_file(self, csv_path: str) -> None:
@@ -96,11 +82,15 @@ class DataProcessor:
             df = pd.read_csv(csv_path)
             self._validate_dataframe(df)
 
-            # 按命令类型分组处理
-            for command_type in CommandType:
-                df_cmd = df[df["command"].str.lower() == command_type.value]
-                if not df_cmd.empty:
-                    self._process_batch(df_cmd)
+            # 按表名和命令类型分组处理
+            for table_name in df["table"].unique():
+                df_table = df[df["table"] == table_name]
+                for command_type in CommandType:
+                    df_cmd = df_table[
+                        df_table["command"].str.lower() == command_type.value
+                    ]
+                    if not df_cmd.empty:
+                        self._process_batch(df_cmd)
 
         except Exception as e:
             console.print(f"[red bold]Error processing file: {str(e)}[/red bold]")
@@ -163,17 +153,30 @@ class DataProcessor:
                 console.print("[yellow]Operation cancelled by user[/yellow]")
                 return
 
-            # 获取受影响行的ID列表（处理大小写问题）
-            id_column = next(col for col in df_before.columns if col.lower() == "id")
-            affected_ids = df_before[id_column].tolist()
+            # 获取表配置和主键列名
+            table_config = operation.table_config
+            primary_key = table_config.primary_key
+
+            # 确保列名大小写匹配
+            pk_column = next(
+                col for col in df_before.columns if col.lower() == primary_key.lower()
+            )
+            affected_ids = df_before[pk_column].tolist()
 
             # 执行操作
             affected_rows = self.db_manager.execute_operation(operation)
 
-            # 使用ID查询更新后的数据
-            id_list = ",".join(map(str, affected_ids))
+            # 使用主键查询更新后的数据
+            id_conditions = []
+            for id_val in affected_ids:
+                if isinstance(id_val, (int, float)):
+                    id_conditions.append(str(id_val))
+                else:
+                    id_conditions.append(f"'{id_val}'")
+
+            id_list = ",".join(id_conditions)
             df_after = self.db_manager.fetch_data(
-                f"SELECT * FROM {operation.table_name} WHERE id IN ({id_list})"
+                f"SELECT * FROM {operation.table_name} WHERE {primary_key} IN ({id_list})"
             )
 
             # 根据操作类型验证结果
@@ -224,16 +227,11 @@ class DataProcessor:
         df_before.columns = df_before.columns.str.lower()
         df_after.columns = df_after.columns.str.lower()
 
-        # 确保两个DataFrame使用相同的索引
-        id_column = "id"  # 统一使用小写
-        df_before = df_before.set_index(id_column)
-        df_after = df_after.set_index(id_column)
-
         # 对每一行进行比较
         for idx in df_after.index:
-            if idx in df_before.index:
-                row_before = df_before.loc[idx]
-                row_after = df_after.loc[idx]
+            if idx < len(df_before):
+                row_before = df_before.iloc[idx]
+                row_after = df_after.iloc[idx]
 
                 # 比较每一列的值
                 for col in df_after.columns:
@@ -242,7 +240,7 @@ class DataProcessor:
                     after_val = str(row_after[col])
                     if before_val != after_val:
                         changes.append(
-                            f"Row {idx} - {col}: "
+                            f"Column {col}: "
                             f"[red]{before_val}[/red] → "
                             f"[green]{after_val}[/green]"
                         )
