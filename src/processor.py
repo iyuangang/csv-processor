@@ -98,6 +98,41 @@ class DataProcessor:
 
     def _process_batch(self, df: pd.DataFrame) -> None:
         """批量处理数据"""
+        # 如果是删除操作且条件列相同，合并为一个IN查询
+        if all(df["command"].str.lower() == "delete"):
+            # 获取第一行数据来确定表名和条件列
+            first_row = df.iloc[0]
+            table_name = first_row["table"]
+            table_config = self.tables_config[table_name]
+
+            # 获取除table和command外的条件列
+            condition_cols = [
+                col for col in df.columns if col not in ["table", "command"]
+            ]
+
+            # 检查所有行的条件列是否相同
+            if condition_cols and all(df[condition_cols].notna().all()):
+                # 获取映射后的列名
+                db_column = table_config.columns_mapping.get(
+                    condition_cols[0], condition_cols[0]
+                )
+
+                # 收集所有行的条件值
+                values = set()
+                for _, row in df.iterrows():
+                    values.add(row[condition_cols[0]])
+
+                # 创建一个合并的操作
+                operation = SQLOperation(
+                    command_type=CommandType.DELETE,
+                    table_name=table_name,
+                    conditions={db_column: list(values)},
+                    table_config=table_config,
+                )
+                self._execute_operation(operation)
+                return
+
+        # 其他情况按原方式处理
         for i in range(0, len(df), self.batch_size):
             batch = df.iloc[i : i + self.batch_size]
             console.print(
@@ -235,7 +270,7 @@ class DataProcessor:
 
                 # 比较每一列的值
                 for col in df_after.columns:
-                    # 转换为字符串进行比较，避免数据类型不一致的问题
+                    # 转换为字符串进行比较，避免���据类型不一致的问题
                     before_val = str(row_before[col])
                     after_val = str(row_after[col])
                     if before_val != after_val:

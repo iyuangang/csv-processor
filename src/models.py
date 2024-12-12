@@ -110,18 +110,25 @@ class SQLOperation:
             return f"'{str(value)}'"
 
     def get_where_clause(self) -> str:
-        """生成WHERE子句"""
-        if not self.conditions:
-            return "1=1"  # 如果没有条件，返回永真条件
-
+        """获取WHERE子句"""
         conditions = []
         for column, value in self.conditions.items():
-            if value is None:
-                conditions.append(f"{column} IS NULL")
+            if isinstance(value, list):
+                # 处理IN查询
+                values_str = self._generate_in_clause(value)
+                conditions.append(f"{column} IN {values_str}")
             else:
+                # 处理单值查询
                 formatted_value = self._format_value(column, value)
                 conditions.append(f"{column} = {formatted_value}")
+
         return " AND ".join(conditions)
+
+    def _generate_in_clause(self, values: List[Any]) -> str:
+        """生成IN子句"""
+        if all(isinstance(v, (int, float)) for v in values):
+            return f"({','.join(str(v) for v in values)})"
+        return f"""({','.join(f"'{str(v)}'" for v in values)})"""
 
     def get_select_sql(self) -> str:
         """生成查询SQL语句"""

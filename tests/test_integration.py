@@ -31,7 +31,7 @@ class TestIntegration(unittest.TestCase):
 
     def setUp(self):
         """每个测试用例前执行"""
-        # 清空并重新导入测试数据
+        # 清空并重导入测试数据
         self._reset_test_data()
 
     def _reset_test_data(self):
@@ -271,8 +271,24 @@ class TestIntegration(unittest.TestCase):
         test_csv = "tests/data/test_batch_delete.csv"
         test_data.to_csv(test_csv, index=False)
 
+        # 记录SQL执行
+        executed_sql = []
+        original_execute = self.db_manager.execute_operation
+
+        def mock_execute(operation):
+            executed_sql.append(operation.get_sql())
+            return original_execute(operation)
+
+        self.db_manager.execute_operation = mock_execute
+
         self.processor.process_file(test_csv)
 
+        # 验证只执行了一条SQL
+        self.assertEqual(len(executed_sql), 1)
+        expected_sql = "DELETE FROM employees WHERE emp_id IN (1001,1002,1003)"
+        self.assertEqual(executed_sql[0], expected_sql)
+
+        # 验证结果
         result = self.db_manager.fetch_data(
             "SELECT COUNT(*) as cnt FROM employees WHERE emp_id IN (1001, 1002, 1003)"
         )
