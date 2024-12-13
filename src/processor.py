@@ -5,6 +5,7 @@ from rich.panel import Panel
 import click
 from .models import UnmatchedData, SQLOperation, CommandType, TableConfig
 from .database import DatabaseManager
+from pathlib import Path
 
 console = Console()
 
@@ -76,7 +77,21 @@ class DataProcessor:
                 table_config=table_config,
             )
 
-    def process_file(self, csv_path: str) -> None:
+    def process_file(self, file_path: str) -> None:
+        """处理输入文件"""
+        file_type = Path(file_path).suffix.lower()
+
+        if file_type == ".yaml" or file_type == ".yml":
+            from .yaml_processor import YAMLProcessor
+
+            yaml_processor = YAMLProcessor(self)
+            yaml_processor.process_yaml(file_path)
+        elif file_type == ".csv":
+            self._process_csv(file_path)
+        else:
+            raise ValueError(f"Unsupported file type: {file_type}")
+
+    def _process_csv(self, csv_path: str) -> None:
         """处理CSV文件"""
         try:
             df = pd.read_csv(csv_path)
@@ -93,7 +108,7 @@ class DataProcessor:
                         self._process_batch(df_cmd)
 
         except Exception as e:
-            console.print(f"[red bold]Error processing file: {str(e)}[/red bold]")
+            console.print(f"[red bold]Error processing CSV file: {str(e)}[/red bold]")
             raise
 
     def _process_batch(self, df: pd.DataFrame) -> None:
@@ -262,7 +277,7 @@ class DataProcessor:
         df_before.columns = df_before.columns.str.lower()
         df_after.columns = df_after.columns.str.lower()
 
-        # 对每一行进行比较
+        # 对每一行进行较
         for idx in df_after.index:
             if idx < len(df_before):
                 row_before = df_before.iloc[idx]
@@ -270,7 +285,7 @@ class DataProcessor:
 
                 # 比较每一列的值
                 for col in df_after.columns:
-                    # 转换为字符串进行比较，避免���据类型不一致的问题
+                    # 转换为字符串进行比较，避免数据类型不一致的问题
                     before_val = str(row_before[col])
                     after_val = str(row_after[col])
                     if before_val != after_val:

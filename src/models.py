@@ -159,3 +159,43 @@ class SQLOperation:
     def get_backup_table_name(self) -> str:
         """获取备份表名"""
         return f"{self.table_name}_bak"
+
+
+@dataclass
+class YAMLOperation:
+    """YAML操作配置模型"""
+
+    table: str
+    command: str
+    conditions: Dict[str, Any]
+    new_values: Optional[Dict[str, Any]] = None
+    description: Optional[str] = None
+    batch_id: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "YAMLOperation":
+        return cls(
+            table=data["table"],
+            command=data["command"].lower(),
+            conditions=data.get("conditions", {}),
+            new_values=data.get("new_values", {}),
+            description=data.get("description"),
+            batch_id=data.get("batch_id"),
+        )
+
+
+@dataclass
+class YAMLBatch:
+    """YAML批处理配置模型"""
+
+    id: str
+    description: Optional[str]
+    operations: List[YAMLOperation]
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "YAMLBatch":
+        return cls(
+            id=data["id"],
+            description=data.get("description"),
+            operations=[YAMLOperation.from_dict(op) for op in data["operations"]],
+        )
