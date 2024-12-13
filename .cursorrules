@@ -1,0 +1,132 @@
+project_settings:
+  name: "csv_processor"
+  description: "CSV/YAML based database operation processor"
+  
+  # 代码规范
+  code_conventions:
+    naming:
+      classes: "PascalCase"
+      methods: "snake_case"
+      variables: "snake_case"
+      constants: "UPPER_CASE"
+    documentation:
+      language: "en_US"
+      required_sections:
+        - description
+        - parameters
+        - returns
+        - raises
+    testing:
+      framework: "unittest"
+      coverage_minimum: 80
+      
+  # 文件格式规范
+  file_formats:
+    yaml:
+      indent: 2
+      max_line_length: 80
+      required_fields:
+        - version
+        - description
+        - batches
+      batch_structure:
+        required:
+          - id
+          - operations
+        optional:
+          - description
+    csv:
+      required_columns:
+        - table
+        - command
+      optional_columns:
+        - conditions
+        - new_values
+        
+  # 数据库操作规范
+  database_operations:
+    supported_commands:
+      - update
+      - delete
+    validation_rules:
+      - check_table_exists
+      - validate_column_names
+      - validate_data_types
+    safety_measures:
+      - require_conditions
+      - backup_before_update
+      - transaction_support
+      
+  # 响应格式规范
+  response_format:
+    code_changes:
+      format: |        ```language:path/to/file
+        // ... existing code ...
+        {{ changes }}
+        // ... existing code ...        ```
+    explanations:
+      structure:
+        - what_changed
+        - why_changed
+        - how_to_use
+    examples:
+      include:
+        - basic_usage
+        - common_scenarios
+        - error_cases
+
+  # 错误处理规范
+  error_handling:
+    required_information:
+      - error_type
+      - error_message
+      - suggested_fix
+      - example_solution
+    error_categories:
+      validation:
+        - schema_validation
+        - data_validation
+        - type_validation
+      runtime:
+        - database_errors
+        - file_access_errors
+        - permission_errors
+
+  # 帮助和文档
+  documentation:
+    required_sections:
+      - installation
+      - configuration
+      - usage_examples
+      - api_reference
+      - troubleshooting
+    format_preferences:
+      - use_markdown
+      - include_code_examples
+      - provide_cli_examples
+
+  # CLI 接口规范
+  cli_interface:
+    command_structure:
+      - use_verb_noun_pattern
+      - group_related_commands
+      - provide_help_text
+    required_features:
+      - input_validation
+      - error_messages
+      - help_documentation
+    optional_features:
+      - auto_completion
+      - progress_indication
+      - interactive_mode
+
+  # 开发工具集成
+  development_tools:
+    required:
+      - type_checking
+      - code_formatting
+      - linting
+    recommended:
+      - pre_commit_hooks
+      - automated_testing
+      - ci_cd_pipeline
